@@ -51,7 +51,7 @@ function calculateDicePower(diceArray, callVal, isZhai) {
     }
 }
 
-// 新增辅助函数：斋模式下判断点数大小（1最大）
+// 辅助函数：斋模式下判断点数大小（1最大）
 function getZhaiRank(val) {
     return val === 1 ? 7 : val;
 }
@@ -62,6 +62,11 @@ wss.on('connection', (ws) => {
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
+
+            // 解决偶发“对方没更新”问题：响应心跳包，防范 WebSocket 假死断开
+            if (data.type === 'ping') {
+                return ws.send(JSON.stringify({ type: 'pong' }));
+            }
 
             if (data.type === 'createRoom') {
                 const roomId = Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -149,33 +154,25 @@ wss.on('connection', (ws) => {
 
                 let isValid = false;
 
-                // 核心更新：融入高阶大话骰6大规则
                 if (curr.count === 0) {
-                    // 规则6：首轮限制
-                    if (isZhaiBool) {
-                        const minZhai = (value === 1) ? playerCount : playerCount + 1;
-                        if (count >= minZhai) isValid = true;
-                    } else {
-                        if (count >= playerCount) isValid = true; // 飞默认从人数起步
+                    if (count === playerCount) {
+                        if (value === 1 && isZhaiBool) isValid = true;
+                    } else if (count >= playerCount + 1) {
+                        isValid = true;
                     }
                 } else {
                     if (!curr.isZhai && !isZhaiBool) {
-                        // 飞 -> 飞：数量大，或者数量同点数大
                         if (count > curr.count || (count === curr.count && value > curr.value)) isValid = true;
                     } else if (!curr.isZhai && isZhaiBool) {
-                        // 规则2：飞 -> 斋：数量允许减 1
                         if (count >= curr.count - 1) isValid = true;
                     } else if (curr.isZhai && isZhaiBool) {
-                        // 规则1：斋 -> 斋：1是最大的，使用 getZhaiRank 比较
                         if (count > curr.count || (count === curr.count && getZhaiRank(value) > getZhaiRank(curr.value))) isValid = true;
                     } else if (curr.isZhai && !isZhaiBool) {
-                        // 规则3：斋 -> 飞：数量必须双倍
                         if (count >= curr.count * 2) isValid = true;
                     }
                 }
 
                 if (isValid) {
-                    // 如果叫的是1点，强制转为斋模式记录
                     room.currentCall = { count, value, isZhai: value === 1 ? true : isZhaiBool };
                     room.currentTurn = room.players.find(p => p.id !== data.userId).id;
                     broadcast(currentRoomId, `叫点更新`);

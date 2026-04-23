@@ -25,15 +25,14 @@
         .opponent-zone { border-bottom: 2px solid #111; justify-content: flex-end; }
         .my-zone { border-top: 2px solid #111; padding-bottom: max(15px, env(safe-area-inset-bottom)); position: relative; }
         
-        /* 新增：优化用户区域的头部状态栏，统一收纳战绩和退出按钮 */
         .my-zone-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; color: var(--text-muted); }
         .my-zone-actions { display: flex; gap: 8px; }
 
         .center-zone { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px; position: relative; }
 
-        /* 3D 骰子 */
+        /* 3D 骰子 - 【UI优化：增加了 drop-shadow 让骰子更立体地悬浮在深色桌面上】 */
         .dice-container { display: flex; justify-content: center; gap: 12px; margin-top: 15px; min-height: 50px; }
-        .cube-scene { width: 45px; height: 45px; perspective: 600px; }
+        .cube-scene { width: 45px; height: 45px; perspective: 600px; filter: drop-shadow(0 8px 8px rgba(0,0,0,0.7)); }
         .cube { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; transform: translateZ(-22.5px); }
         .cube-face { position: absolute; width: 45px; height: 45px; background: var(--dice-bg); border-radius: 6px; border: 1px solid #c7bca9; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); grid-template-areas: "a b c" "d e f" "g h i"; padding: 4px; box-sizing: border-box; box-shadow: inset 0 0 10px rgba(0,0,0,0.15); backface-visibility: hidden; }
         .cube-face.front { transform: rotateY(0deg) translateZ(22.5px); } .cube-face.back { transform: rotateY(180deg) translateZ(22.5px); }
@@ -43,11 +42,18 @@
         .cube-face.unknown { display: flex; align-items: center; justify-content: center; color: var(--dice-dot); font-size: 24px; font-weight: bold; }
         @keyframes tumble3d { 0% { transform: translateZ(-22.5px) rotateX(0deg) rotateY(0deg) rotateZ(0deg); } 100% { transform: translateZ(-22.5px) rotateX(720deg) rotateY(1080deg) rotateZ(360deg); } }
 
-        /* 叫点与信息 */
+        /* 叫点与信息 - 【UI优化：增加了文字 Pop-in 弹性动画类】 */
         .big-call { font-size: 4rem; font-weight: 900; color: var(--primary); text-shadow: 0 4px 15px rgba(217, 138, 60, 0.4); margin: 0; text-align: center; line-height: 1; }
         .mode-tag { font-size: 1.5rem; color: #fff; background: var(--danger); padding: 4px 12px; border-radius: 8px; vertical-align: super; font-weight: normal; margin-left: 10px;}
         .mode-tag.zhai { background: var(--warning); color: #111;}
         .sys-turn-log { font-size: 16px; color: var(--text-muted); margin-bottom: 10px; text-align: center; }
+        
+        @keyframes textPop {
+            0% { transform: scale(0.85); text-shadow: 0 0 0 rgba(217, 138, 60, 0); opacity: 0.5; }
+            50% { transform: scale(1.05); text-shadow: 0 8px 25px rgba(217, 138, 60, 0.6); opacity: 1; }
+            100% { transform: scale(1); text-shadow: 0 4px 15px rgba(217, 138, 60, 0.4); }
+        }
+        .pop-anim { animation: textPop 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
 
         /* 绝对悬浮看板 */
         .result-board {
@@ -115,13 +121,24 @@
             display: flex; align-items: center; justify-content: center;
         }
         button.action-btn:active { transform: scale(0.97); }
-        button:disabled { background: var(--text-muted) !important; opacity: 0.5; }
+        
+        /* 【UI优化核心】：去掉了修改背景色的强制规定，只保留透明度，让按钮保留原本颜色 */
+        button:disabled { opacity: 0.35 !important; cursor: not-allowed; }
         
         .btn-primary { background: var(--primary); }
         .btn-success { background: var(--highlight); }
         .btn-danger { background: var(--danger); }
         .btn-warning { background: var(--warning); color: #111; }
-        .control-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; width: 100%; margin-top: 15px;}
+        
+        /* 【UI优化】：开！按钮的危险微呼吸效果 */
+        @keyframes dangerPulse {
+            0% { box-shadow: 0 0 0 0 rgba(217, 74, 74, 0.4); }
+            70% { box-shadow: 0 0 0 8px rgba(217, 74, 74, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(217, 74, 74, 0); }
+        }
+        #btnChallenge:not(:disabled) { animation: dangerPulse 2s infinite; border: 1px solid rgba(255,255,255,0.15); }
+
+        .control-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; width: 100%; margin-top: 15px;}
         
         .status-tag { font-size: 12px; padding: 2px 8px; border-radius: 12px; background: #444; margin-left: 10px; }
         .status-ready { background: var(--highlight); color: #fff; }
@@ -166,8 +183,8 @@
         <div class="my-zone-header">
             <div>我 <span id="myStatus" class="status-tag">未准备</span></div>
             <div class="my-zone-actions">
-                <button class="btn-small danger" id="btnLeaveRoom" onclick="leaveRoom()" style="display:none;">🚪 退出</button>
                 <button class="btn-small" onclick="openHistory()">📊 战绩</button>
+                <button class="btn-small danger" id="btnLeaveRoom" onclick="leaveRoom()" style="display:none;">🚪 退出</button>
             </div>
         </div>
 
@@ -189,7 +206,7 @@
                 </div>
             </div>
             
-            <div class="control-grid" style="grid-template-columns: repeat(4, 1fr);">
+            <div class="control-grid">
                 <button class="action-btn btn-success" onclick="callDice(false)" id="btnCallFei">叫(飞)</button>
                 <button class="action-btn btn-warning" onclick="callDice(true)" id="btnCallZhai">叫(斋)</button>
                 <button class="action-btn btn-primary" onclick="addOneCall()" id="btnAddOne" style="background: #3a82e4;">+1</button>
@@ -211,6 +228,7 @@
 
 <script>
     let ws;
+    let pingInterval;
     const myUserId = localStorage.getItem('diceUserId') || Math.random().toString(36).substring(2, 12);
     localStorage.setItem('diceUserId', myUserId);
     
@@ -225,9 +243,15 @@
             if (savedRoomId) {
                 ws.send(JSON.stringify({ type: 'joinRoom', roomId: savedRoomId, userId: myUserId }));
             }
+            pingInterval = setInterval(() => {
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'ping' }));
+                }
+            }, 15000);
         };
 
         ws.onclose = () => {
+            clearInterval(pingInterval);
             const sysLog = document.getElementById('sysLog');
             if(sysLog) { sysLog.innerText = '网络连接异常，正在重连...'; sysLog.style.color = 'var(--danger)'; }
             setTimeout(connect, 2000);
@@ -235,6 +259,8 @@
 
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
+            if (data.type === 'pong') return;
+            
             if (data.type === 'roomCreated') {
                 savedRoomId = data.roomId;
                 sessionStorage.setItem('diceRoomId', savedRoomId);
@@ -348,7 +374,6 @@
         const callBox = document.getElementById('currentCallBox');
         const resultBoard = document.getElementById('resultBoard');
         const btnLeaveRoom = document.getElementById('btnLeaveRoom');
-        const btnAddOne = document.getElementById('btnAddOne');
 
         renderDiceArray('myDice', me ? me.dice : []);
         renderDiceArray('opponentDice', opp ? opp.dice : []);
@@ -400,12 +425,21 @@
             actionArea.style.display = 'block';
             callBox.style.display = 'block';
 
+            const callEl = document.getElementById('currentCallText');
             if (state.currentCall.count > 0) {
                 const modeClass = state.currentCall.isZhai ? 'zhai' : '';
                 const modeText = state.currentCall.isZhai ? '斋' : '飞';
-                document.getElementById('currentCallText').innerHTML = `${state.currentCall.count}个${state.currentCall.value} <span class="mode-tag ${modeClass}">${modeText}</span>`;
+                const newHtml = `${state.currentCall.count}个${state.currentCall.value} <span class="mode-tag ${modeClass}">${modeText}</span>`;
+                // 【UI优化：利用 Pop-in 动画赋予叫价压迫感，仅在数值变化时触发】
+                if (callEl.innerHTML !== newHtml) {
+                    callEl.innerHTML = newHtml;
+                    callEl.classList.remove('pop-anim');
+                    void callEl.offsetWidth; // 强行触发一次 DOM 重绘
+                    callEl.classList.add('pop-anim');
+                }
             } else {
-                document.getElementById('currentCallText').innerText = `未叫点`;
+                callEl.innerText = `未叫点`;
+                callEl.classList.remove('pop-anim');
             }
 
             const isMyTurn = state.currentTurn === myUserId;
@@ -419,13 +453,12 @@
                 sysLog.style.color = 'var(--highlight)';
                 const curr = state.currentCall;
                 if (curr.count === 0) {
-                    document.getElementById('draftCount').value = 2;
-                    document.getElementById('draftValue').value = 2;
-                    if(btnAddOne) btnAddOne.disabled = true; // 第一轮不准使用加1
+                    const playerCount = state.players ? state.players.length : 2;
+                    document.getElementById('draftCount').value = playerCount;
+                    document.getElementById('draftValue').value = 1;
                 } else {
                     document.getElementById('draftCount').value = curr.count;
                     document.getElementById('draftValue').value = curr.value;
-                    if(btnAddOne) btnAddOne.disabled = false; // 非第一局开放加1
                 }
                 validateDraft(true); 
             } else {
@@ -433,6 +466,7 @@
                 sysLog.style.color = 'var(--text-muted)';
                 document.getElementById('btnCallFei').disabled = true;
                 document.getElementById('btnCallZhai').disabled = true;
+                const btnAddOne = document.getElementById('btnAddOne');
                 if(btnAddOne) btnAddOne.disabled = true;
             }
         }
@@ -484,7 +518,6 @@
 
     function closeHistory() { document.getElementById('historyModal').style.display = 'none'; }
 
-    // 优化：修改点数时，6点和1点会自动轮转
     function adjustDraft(type, delta) {
         if (currentGameState.currentTurn !== myUserId) return;
         const input = document.getElementById(type === 'count' ? 'draftCount' : 'draftValue');
@@ -501,11 +534,13 @@
         validateDraft(true);
     }
 
-    // 新增：快捷+1功能
     function addOneCall() {
         if (!currentGameState || currentGameState.phase !== 'playing' || currentGameState.currentTurn !== myUserId) return;
         const curr = currentGameState.currentCall;
         if (curr && curr.count > 0) {
+            const btn = document.getElementById('btnAddOne');
+            if (btn) btn.disabled = true;
+            
             ws.send(JSON.stringify({ 
                 type: 'callDice', 
                 userId: myUserId,
@@ -516,7 +551,6 @@
         }
     }
 
-    // 核心重写：完美支持所有高阶规则（无错别字版本）
     function validateDraft(forceFormat = false) {
         const cStr = document.getElementById('draftCount').value;
         const vStr = document.getElementById('draftValue').value;
@@ -531,7 +565,7 @@
         let v = parseInt(vStr) || 1;
 
         if (forceFormat) {
-            if (c < 1) c = 1;
+            if (c < 1) c = 1; 
             if (v < 1) v = 1; if (v > 6) v = 6;
             document.getElementById('draftCount').value = c;
             document.getElementById('draftValue').value = v;
@@ -540,48 +574,46 @@
         const curr = currentGameState.currentCall;
         const btnFei = document.getElementById('btnCallFei');
         const btnZhai = document.getElementById('btnCallZhai');
+        const btnAddOne = document.getElementById('btnAddOne');
 
-        // 1点本身就是百搭，不符合飞的逻辑，视觉上置灰
-        if (v === 1) { 
-            btnFei.style.opacity = "0.3"; 
-        } else { 
-            btnFei.style.opacity = "1"; 
-        }
+        // 由于取消了 CSS 强制背景色，现在可以通过纯度滤镜或不操作直接依赖透明度。
+        // 原生透明度调整足以表示不可用状态，按钮绝不再变灰！
+        if (v === 1) { btnFei.disabled = true; btnFei.style.opacity = "0.35"; } 
+        else { btnFei.style.opacity = "1"; }
 
-        let isFeiValid = false; 
-        let isZhaiValid = false;
+        let isFeiValid = false; let isZhaiValid = false;
         const playerCount = currentGameState.players ? currentGameState.players.length : 2;
+        const getRank = (val) => val === 1 ? 7 : val;
 
         if (curr.count === 0) {
-            // 第一轮规则
-            if (c >= playerCount) isFeiValid = (v !== 1); // 飞默认从人数开始
-            
-            // 规则6：斋模式，1点允许叫人数，其他点数必须人数+1
-            const minZhai = (v === 1) ? playerCount : playerCount + 1;
-            if (c >= minZhai) isZhaiValid = true;
+            if (c === playerCount) {
+                isZhaiValid = (v === 1);
+                isFeiValid = false;
+            } else if (c >= playerCount + 1) {
+                isZhaiValid = true;
+                isFeiValid = (v !== 1);
+            } else {
+                isZhaiValid = false;
+                isFeiValid = false;
+            }
+            if(btnAddOne) btnAddOne.disabled = true;
         } else {
-            // 后续轮次规则转换
-            // 斋模式的权重计算 (规则1：1点最大)
-            const getRank = (val) => val === 1 ? 7 : val;
+            if(btnAddOne) btnAddOne.disabled = false;
 
-            // 校验【飞】的合法性
             if (v !== 1) {
                 if (!curr.isZhai) {
-                    // 飞 -> 飞: 数量大，或数量同点数大
-                    if (c > curr.count || (c === curr.count && v > curr.value)) isFeiValid = true;
+                    isFeiValid = c > curr.count || (c === curr.count && v > curr.value);
                 } else {
-                    // 规则3：斋 -> 飞: 数量必须双倍
-                    if (c >= curr.count * 2) isFeiValid = true;
+                    isFeiValid = c >= curr.count * 2;
                 }
+            } else {
+                isFeiValid = false;
             }
 
-            // 校验【斋】的合法性
             if (!curr.isZhai) {
-                // 规则2：飞 -> 斋: 数量允许减 1
-                if (c >= curr.count - 1) isZhaiValid = true;
+                isZhaiValid = c >= curr.count - 1;
             } else {
-                // 规则1：斋 -> 斋: 按照 1 最大进行比对
-                if (c > curr.count || (c === curr.count && getRank(v) > getRank(curr.value))) isZhaiValid = true;
+                isZhaiValid = c > curr.count || (c === curr.count && getRank(v) > getRank(curr.value));
             }
         }
 
@@ -591,6 +623,11 @@
     }
 
     function callDice(isZhaiReq) {
+        document.getElementById('btnCallFei').disabled = true;
+        document.getElementById('btnCallZhai').disabled = true;
+        const btnAddOne = document.getElementById('btnAddOne');
+        if(btnAddOne) btnAddOne.disabled = true;
+
         ws.send(JSON.stringify({ 
             type: 'callDice', 
             userId: myUserId,
@@ -600,7 +637,10 @@
         }));
     }
 
-    function challenge() { ws.send(JSON.stringify({ type: 'challenge', userId: myUserId })); }
+    function challenge() { 
+        document.getElementById('btnChallenge').disabled = true;
+        ws.send(JSON.stringify({ type: 'challenge', userId: myUserId })); 
+    }
 
     connect();
 </script>
