@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>大话骰 - Pro Edition</title>
+    <style>
+        :root {
+            --bg-color: #1e1814; --panel-bg: #2d241d; 
+            --primary: #d98a3c; --primary-hover: #b87532;
+            --text-main: #f0e6d2; --text-muted: #8c7e70;
+            --dice-bg: #f0e6d2; --dice-dot: #1e1814;
+            --danger: #d94a4a; --highlight: #2db84d;
+            --warning: #d9b53c; 
+        }
+        
+        * { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+
+        body { background-color: var(--bg-color); color: var(--text-main); font-family: -apple-system, sans-serif; margin: 0; padding: 0; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+
+        #loginArea { margin: auto; width: 90%; max-width: 400px; background: var(--panel-bg); padding: 20px; border-radius: 12px; text-align: center; box-sizing: border-box; }
+        #gameArea { display: none; height: 100%; width: 100%; flex-direction: column; justify-content: space-between; position: relative; }
+        
+        .player-zone { background: var(--panel-bg); padding: 15px 20px; display: flex; flex-direction: column; }
+        .opponent-zone { border-bottom: 2px solid #111; justify-content: flex-end; }
+        .my-zone { border-top: 2px solid #111; padding-bottom: max(15px, env(safe-area-inset-bottom)); position: relative; }
+        
+        /* 新增：优化用户区域的头部状态栏，统一收纳战绩和退出按钮 */
+        .my-zone-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; color: var(--text-muted); }
+        .my-zone-actions { display: flex; gap: 8px; }
+
+        .center-zone { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px; position: relative; }
+
+        /* 3D 骰子 */
+        .dice-container { display: flex; justify-content: center; gap: 12px; margin-top: 15px; min-height: 50px; }
+        .cube-scene { width: 45px; height: 45px; perspective: 600px; }
+        .cube { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; transform: translateZ(-22.5px); }
+        .cube-face { position: absolute; width: 45px; height: 45px; background: var(--dice-bg); border-radius: 6px; border: 1px solid #c7bca9; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); grid-template-areas: "a b c" "d e f" "g h i"; padding: 4px; box-sizing: border-box; box-shadow: inset 0 0 10px rgba(0,0,0,0.15); backface-visibility: hidden; }
+        .cube-face.front { transform: rotateY(0deg) translateZ(22.5px); } .cube-face.back { transform: rotateY(180deg) translateZ(22.5px); }
+        .cube-face.right { transform: rotateY(90deg) translateZ(22.5px); } .cube-face.left { transform: rotateY(-90deg) translateZ(22.5px); }
+        .cube-face.top { transform: rotateX(90deg) translateZ(22.5px); } .cube-face.bottom { transform: rotateX(-90deg) translateZ(22.5px); }
+        .dot { background: var(--dice-dot); width: 9px; height: 9px; border-radius: 50%; margin: auto; }
+        .cube-face.unknown { display: flex; align-items: center; justify-content: center; color: var(--dice-dot); font-size: 24px; font-weight: bold; }
+        @keyframes tumble3d { 0% { transform: translateZ(-22.5px) rotateX(0deg) rotateY(0deg) rotateZ(0deg); } 100% { transform: translateZ(-22.5px) rotateX(720deg) rotateY(1080deg) rotateZ(360deg); } }
+
+        /* 叫点与信息 */
+        .big-call { font-size: 4rem; font-weight: 900; color: var(--primary); text-shadow: 0 4px 15px rgba(217, 138, 60, 0.4); margin: 0; text-align: center; line-height: 1; }
+        .mode-tag { font-size: 1.5rem; color: #fff; background: var(--danger); padding: 4px 12px; border-radius: 8px; vertical-align: super; font-weight: normal; margin-left: 10px;}
+        .mode-tag.zhai { background: var(--warning); color: #111;}
+        .sys-turn-log { font-size: 16px; color: var(--text-muted); margin-bottom: 10px; text-align: center; }
+
+        /* 绝对悬浮看板 */
+        .result-board {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 90%; max-width: 380px; background: rgba(30, 24, 20, 0.98);
+            border: 2px solid var(--primary); border-radius: 16px; padding: 25px 20px;
+            box-shadow: 0 10px 50px rgba(0,0,0,0.9); z-index: 1000; display: none;
+            flex-direction: column; align-items: center; text-align: center;
+            animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .result-title { font-size: 3rem; font-weight: 900; margin-bottom: 15px; }
+        .result-title.win { color: var(--highlight); text-shadow: 0 0 30px rgba(45,184,77,0.5); }
+        .result-title.lose { color: var(--danger); text-shadow: 0 0 30px rgba(217,74,74,0.5); }
+        .result-formula { font-size: 1.1rem; color: #fff; background: rgba(0,0,0,0.5); padding: 15px; border-radius: 12px; line-height: 1.6; border: 1px solid #443; width: 100%; box-sizing: border-box; text-align: left;}
+        .result-formula b { color: var(--primary); font-size: 1.2rem;}
+        @keyframes popIn { 0% { transform: translate(-50%, -50%) scale(0.7); opacity: 0; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
+
+        .room-id-bottom { position: absolute; bottom: 5px; font-size: 11px; color: var(--text-muted); opacity: 0.6; }
+
+        /* 小功能按钮统一类 */
+        .btn-small { background: rgba(255,255,255,0.08); border: 1px solid var(--text-muted); color: var(--text-main); padding: 6px 12px; border-radius: 20px; font-size: 13px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center;}
+        .btn-small:active { background: rgba(255,255,255,0.2); }
+        .btn-small.danger { color: var(--danger); border-color: rgba(217,74,74,0.5); background: rgba(217,74,74,0.1); }
+
+        .history-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 2000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(5px);}
+        .history-panel { background: var(--panel-bg); width: 92%; max-width: 400px; border-radius: 15px; display: flex; flex-direction: column; max-height: 85vh; overflow: hidden; border: 1px solid #554; box-shadow: 0 10px 40px rgba(0,0,0,0.5);}
+        .history-header { padding: 15px; text-align: center; font-size: 18px; font-weight: bold; border-bottom: 1px solid #443; position: relative; }
+        .history-close { position: absolute; right: 15px; top: 15px; font-size: 24px; cursor: pointer; color: var(--text-muted); line-height: 1; }
+        .history-content { flex: 1; overflow-y: auto; padding: 15px; background: #221b16;}
+        
+        .hist-item { background: var(--bg-color); border: 1px solid #3d3227; border-radius: 10px; margin-bottom: 12px; padding: 12px; }
+        .hist-top { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #443; padding-bottom: 10px; margin-bottom: 10px; }
+        .hist-call { font-size: 16px; font-weight: bold; color: var(--primary); text-align: center; flex: 2;}
+        .hist-side { flex: 1; display: flex; gap: 4px; align-items: center; }
+        .hist-side.right { justify-content: flex-end; }
+        .hist-tag { font-size: 12px; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+        .tag-kai { background: var(--warning); color: #111; }
+        .tag-win { background: var(--highlight); color: white; }
+        .tag-lose { background: var(--danger); color: white; }
+        .hist-bottom { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+        .hist-dice { color: var(--dice-bg); letter-spacing: 2px; font-weight: bold; background: #332a21; padding: 2px 6px; border-radius: 6px;}
+        .hist-vs { color: var(--danger); font-size: 14px; font-weight: 900; font-style: italic;}
+        .hist-role { font-weight: 900; color: var(--text-main); font-size: 15px;}
+        
+        /* 操作区 */
+        .input-row { display: flex; align-items: center; justify-content: center; gap: 5px; }
+        .input-row span { font-size: 16px; font-weight: bold; }
+        
+        .stepper-btn { 
+            width: 40px; height: 40px; background: #4a3c31; border: none; color: white; 
+            font-size: 24px; border-radius: 8px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; 
+        }
+        .stepper-btn:active { background: #3a2e25; }
+        
+        .num-input { 
+            width: 50px; height: 40px; text-align: center; font-size: 20px; font-weight: bold; 
+            background: var(--bg-color); color: var(--text-main); border: 2px solid #4a3c31; 
+            border-radius: 8px; outline: none; 
+        }
+        
+        button.action-btn { 
+            width: 100%; padding: 14px; border: none; border-radius: 10px; 
+            font-size: 18px; font-weight: bold; color: white; cursor: pointer; transition: 0.1s;
+            display: flex; align-items: center; justify-content: center;
+        }
+        button.action-btn:active { transform: scale(0.97); }
+        button:disabled { background: var(--text-muted) !important; opacity: 0.5; }
+        
+        .btn-primary { background: var(--primary); }
+        .btn-success { background: var(--highlight); }
+        .btn-danger { background: var(--danger); }
+        .btn-warning { background: var(--warning); color: #111; }
+        .control-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; width: 100%; margin-top: 15px;}
+        
+        .status-tag { font-size: 12px; padding: 2px 8px; border-radius: 12px; background: #444; margin-left: 10px; }
+        .status-ready { background: var(--highlight); color: #fff; }
+        input[type="text"] { width: calc(100% - 30px); padding: 15px; margin: 15px 0; background: var(--bg-color); border: 1px solid var(--text-muted); color: var(--text-main); border-radius: 8px; font-size: 18px; text-align: center; }
+        .toast-alert { position: absolute; top: 10%; left: 50%; transform: translateX(-50%); background: var(--danger); color: white; padding: 10px 20px; border-radius: 20px; font-weight: bold; animation: pulse 1.5s infinite; white-space: nowrap; pointer-events: none; display: none; z-index: 10; }
+        @keyframes pulse { 0%, 100% { transform: translateX(-50%) scale(1); opacity: 1; } 50% { transform: translateX(-50%) scale(1.05); opacity: 0.8; } }
+    </style>
+</head>
+<body>
+
+<div id="loginArea">
+    <h1 style="margin-top:0; color: var(--primary);">🎲 大话骰</h1>
+    <button class="action-btn btn-primary" onclick="createRoom()">新建房间</button>
+    <div style="margin: 20px 0; color: var(--text-muted);">—— 或 ——</div>
+    <input type="text" id="roomIdInput" placeholder="输入4位房间号">
+    <button class="action-btn btn-success" onclick="joinRoom()">加入房间</button>
+</div>
+
+<div id="gameArea">
+    <div id="resultBoard" class="result-board">
+        <div id="resultTitle" class="result-title"></div>
+        <div id="resultFormula" class="result-formula"></div>
+    </div>
+
+    <div class="player-zone opponent-zone">
+        <div style="color: var(--text-muted);">对手 <span id="opponentStatus" class="status-tag">等待中</span></div>
+        <div class="dice-container" id="opponentDice"></div>
+    </div>
+
+    <div class="center-zone">
+        <div class="toast-alert" id="readyToast">⚠️ 对手已就绪！</div>
+        
+        <div id="currentCallBox" style="display:none;">
+            <div class="sys-turn-log" id="sysLog">等待操作...</div>
+            <div class="big-call" id="currentCallText">无</div>
+        </div>
+
+        <div class="room-id-bottom">房间号: <span id="displayRoomId"></span></div>
+    </div>
+
+    <div class="player-zone my-zone">
+        <div class="my-zone-header">
+            <div>我 <span id="myStatus" class="status-tag">未准备</span></div>
+            <div class="my-zone-actions">
+                <button class="btn-small danger" id="btnLeaveRoom" onclick="leaveRoom()" style="display:none;">🚪 退出</button>
+                <button class="btn-small" onclick="openHistory()">📊 战绩</button>
+            </div>
+        </div>
+
+        <div class="dice-container" id="myDice"></div>
+        
+        <div id="actionArea" style="display: none; margin-top: 20px;">
+            <div style="display: flex; justify-content: space-between; gap: 10px;">
+                <div class="input-row">
+                    <button class="stepper-btn" onclick="adjustDraft('count', -1)">-</button>
+                    <input type="number" id="draftCount" class="num-input" value="2" oninput="validateDraft(false)" onblur="validateDraft(true)">
+                    <span>个</span>
+                    <button class="stepper-btn" onclick="adjustDraft('count', 1)">+</button>
+                </div>
+                <div class="input-row">
+                    <button class="stepper-btn" onclick="adjustDraft('value', -1)">-</button>
+                    <input type="number" id="draftValue" class="num-input" value="2" oninput="validateDraft(false)" onblur="validateDraft(true)">
+                    <span>点</span>
+                    <button class="stepper-btn" onclick="adjustDraft('value', 1)">+</button>
+                </div>
+            </div>
+            
+            <div class="control-grid" style="grid-template-columns: repeat(4, 1fr);">
+                <button class="action-btn btn-success" onclick="callDice(false)" id="btnCallFei">叫(飞)</button>
+                <button class="action-btn btn-warning" onclick="callDice(true)" id="btnCallZhai">叫(斋)</button>
+                <button class="action-btn btn-primary" onclick="addOneCall()" id="btnAddOne" style="background: #3a82e4;">+1</button>
+                <button class="action-btn btn-danger" onclick="challenge()" id="btnChallenge">开！</button>
+            </div>
+        </div>
+        <div style="margin-top: 15px;" id="rollArea">
+            <button class="action-btn btn-primary" id="btnRoll" onclick="rollDice()">摇骰子 🎲</button>
+        </div>
+    </div>
+</div>
+
+<div id="historyModal" class="history-overlay" style="display:none;">
+    <div class="history-panel">
+        <div class="history-header">本局历史战绩 <span class="history-close" onclick="closeHistory()">×</span></div>
+        <div class="history-content" id="historyList"></div>
+    </div>
+</div>
+
+<script>
+    let ws;
+    const myUserId = localStorage.getItem('diceUserId') || Math.random().toString(36).substring(2, 12);
+    localStorage.setItem('diceUserId', myUserId);
+    
+    let currentGameState = null;
+    let savedRoomId = sessionStorage.getItem('diceRoomId') || null;
+
+    function connect() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(`${protocol}//${window.location.host}`);
+        
+        ws.onopen = () => {
+            if (savedRoomId) {
+                ws.send(JSON.stringify({ type: 'joinRoom', roomId: savedRoomId, userId: myUserId }));
+            }
+        };
+
+        ws.onclose = () => {
+            const sysLog = document.getElementById('sysLog');
+            if(sysLog) { sysLog.innerText = '网络连接异常，正在重连...'; sysLog.style.color = 'var(--danger)'; }
+            setTimeout(connect, 2000);
+        };
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === 'roomCreated') {
+                savedRoomId = data.roomId;
+                sessionStorage.setItem('diceRoomId', savedRoomId);
+                showGame(savedRoomId);
+            }
+            if (data.type === 'error') {
+                if (data.message === '房间不存在') {
+                    resetLocalGame();
+                    alert(data.message);
+                } else {
+                    alert(data.message); 
+                }
+            }
+            if (data.type === 'leftRoom') {
+                resetLocalGame();
+            }
+            if (data.type === 'gameStateUpdate') {
+                savedRoomId = data.state.roomId;
+                sessionStorage.setItem('diceRoomId', savedRoomId);
+                showGame(savedRoomId);
+                currentGameState = data.state;
+                renderGame();
+            }
+        };
+    }
+
+    function resetLocalGame() {
+        sessionStorage.removeItem('diceRoomId');
+        savedRoomId = null;
+        currentGameState = null;
+        document.getElementById('resultBoard').style.display = 'none';
+        document.getElementById('gameArea').style.display = 'none';
+        document.getElementById('loginArea').style.display = 'block';
+    }
+
+    function showGame(roomId) {
+        document.getElementById('loginArea').style.display = 'none';
+        document.getElementById('gameArea').style.display = 'flex';
+        document.getElementById('displayRoomId').innerText = roomId;
+    }
+
+    function createRoom() { ws.send(JSON.stringify({ type: 'createRoom', userId: myUserId })); }
+    function joinRoom() { 
+        const r = document.getElementById('roomIdInput').value.trim();
+        if (!r) return alert('请输入房间号');
+        savedRoomId = r;
+        sessionStorage.setItem('diceRoomId', savedRoomId);
+        ws.send(JSON.stringify({ type: 'joinRoom', roomId: r, userId: myUserId })); 
+    }
+
+    function leaveRoom() {
+        if (confirm("确定要退出当前房间吗？")) {
+            ws.send(JSON.stringify({ type: 'leaveRoom', userId: myUserId }));
+        }
+    }
+
+    function getFaceHtml(val, faceClass) {
+        if (val === '?') return `<div class="cube-face ${faceClass} unknown">?</div>`;
+        let dots = '';
+        const d = (area) => `<div class="dot" style="grid-area: ${area}"></div>`;
+        if (val === 1) dots = d('e');
+        if (val === 2) dots = d('a') + d('i');
+        if (val === 3) dots = d('a') + d('e') + d('i');
+        if (val === 4) dots = d('a') + d('c') + d('g') + d('i');
+        if (val === 5) dots = d('a') + d('c') + d('e') + d('g') + d('i');
+        if (val === 6) dots = d('a') + d('c') + d('d') + d('f') + d('g') + d('i');
+        return `<div class="cube-face ${faceClass}">${dots}</div>`;
+    }
+
+    function getCubeHtml(val) {
+        const rx = Math.random() * 20 - 10; const ry = Math.random() * 20 - 10;
+        const f2 = val === '?' ? '?' : (val % 6) + 1; const f3 = val === '?' ? '?' : ((val + 1) % 6) + 1;
+        const f4 = val === '?' ? '?' : ((val + 2) % 6) + 1; const f5 = val === '?' ? '?' : ((val + 3) % 6) + 1;
+        const f6 = val === '?' ? '?' : ((val + 4) % 6) + 1;
+        return `<div class="cube-scene"><div class="cube" style="transform: translateZ(-22.5px) rotateX(${rx}deg) rotateY(${ry}deg)">
+                ${getFaceHtml(val, 'front')}${getFaceHtml(f2, 'back')}${getFaceHtml(f3, 'right')}
+                ${getFaceHtml(f4, 'left')}${getFaceHtml(f5, 'top')}${getFaceHtml(f6, 'bottom')}
+            </div></div>`;
+    }
+
+    function renderDiceArray(id, diceArr) {
+        const box = document.getElementById(id);
+        box.innerHTML = '';
+        if (!diceArr || diceArr.length === 0) { box.innerHTML = '<div style="color:#555; line-height:50px;">暂无骰子</div>'; return; }
+        diceArr.forEach(v => box.innerHTML += getCubeHtml(v));
+    }
+
+    function rollDice() {
+        const cubes = document.querySelectorAll('#myDice .cube');
+        cubes.forEach(cube => cube.style.animation = 'tumble3d 0.6s ease-in-out forwards');
+        document.getElementById('btnRoll').disabled = true;
+        setTimeout(() => ws.send(JSON.stringify({ type: 'rollDice', userId: myUserId })), 600); 
+    }
+
+    function renderGame() {
+        const state = currentGameState;
+        const me = state.players.find(p => p.id === myUserId);
+        const opp = state.players.find(p => p.id !== myUserId);
+
+        document.getElementById('myStatus').innerText = me && me.isReady ? '已准备' : '未准备';
+        document.getElementById('myStatus').className = me && me.isReady ? 'status-tag status-ready' : 'status-tag';
+        if (opp) {
+            document.getElementById('opponentStatus').innerText = opp.isOnline ? (opp.isReady ? '已准备' : '等待中') : '已掉线';
+            document.getElementById('opponentStatus').className = opp.isOnline && opp.isReady ? 'status-tag status-ready' : 'status-tag';
+        }
+
+        document.getElementById('readyToast').style.display = (opp && opp.isReady && me && !me.isReady && state.phase !== 'playing') ? 'block' : 'none';
+
+        const rollArea = document.getElementById('rollArea');
+        const actionArea = document.getElementById('actionArea');
+        const callBox = document.getElementById('currentCallBox');
+        const resultBoard = document.getElementById('resultBoard');
+        const btnLeaveRoom = document.getElementById('btnLeaveRoom');
+        const btnAddOne = document.getElementById('btnAddOne');
+
+        renderDiceArray('myDice', me ? me.dice : []);
+        renderDiceArray('opponentDice', opp ? opp.dice : []);
+
+        if (state.phase === 'waiting' || state.phase === 'reveal') {
+            rollArea.style.display = 'block';
+            document.getElementById('btnRoll').innerText = state.phase === 'reveal' ? '摇骰准备下一局' : '摇骰子 🎲';
+            document.getElementById('btnRoll').disabled = me.isReady;
+            actionArea.style.display = 'none';
+            btnLeaveRoom.style.display = 'flex';
+
+            if (state.phase === 'reveal' && state.result) {
+                callBox.style.display = 'none'; 
+                resultBoard.style.display = 'flex'; 
+                
+                const r = state.result;
+                const isWin = r.winner === myUserId;
+                const amIChallenger = (myUserId === r.challengerId);
+                
+                const titleEl = document.getElementById('resultTitle');
+                titleEl.innerText = isWin ? '🎉 你赢了！' : '💥 你输了！';
+                titleEl.className = isWin ? 'result-title win' : 'result-title lose';
+
+                let fHtml = '';
+                const myDesc = amIChallenger ? r.challengerDesc : r.callerDesc;
+                const oppDesc = amIChallenger ? r.callerDesc : r.challengerDesc;
+
+                fHtml += `<div style="text-align:center; font-size:1.1rem; margin-bottom:10px;">目标：<b>${r.callCount}</b>个<b>${r.callValue}</b> <span class="mode-tag ${r.mode==='斋'?'zhai':''}" style="font-size:1rem; padding:2px 8px;">${r.mode}</span></div>`;
+                fHtml += `<hr style="border-color:#443; margin:10px 0;">`;
+                
+                if (r.bothSingle) {
+                    fHtml += `<div style="color:var(--danger); text-align:center;"><b>双单骰碰撞！互相抵消</b><br>发起开牌的挑战者直接判负。</div>`;
+                } else {
+                    fHtml += `【我】${myDesc}<br>【对方】${oppDesc}<br>`;
+                    fHtml += `场上有效共计：<b>${r.totalMatch}</b> 个<br><hr style="border-color:#443; margin:10px 0;">`;
+                    if (isWin) fHtml += amIChallenger ? `对方吹牛被抓，数量不足！🤡` : `数量足够，对方挑战失败！🤡`;
+                    else fHtml += amIChallenger ? `数量足够，你被骗开牌了！🤡` : `数量不足，你吹牛被抓了！🤡`;
+                }
+                document.getElementById('resultFormula').innerHTML = fHtml;
+            } else {
+                callBox.style.display = 'none';
+                resultBoard.style.display = 'none';
+            }
+
+        } else if (state.phase === 'playing') {
+            btnLeaveRoom.style.display = 'none';
+            resultBoard.style.display = 'none'; 
+            rollArea.style.display = 'none';
+            actionArea.style.display = 'block';
+            callBox.style.display = 'block';
+
+            if (state.currentCall.count > 0) {
+                const modeClass = state.currentCall.isZhai ? 'zhai' : '';
+                const modeText = state.currentCall.isZhai ? '斋' : '飞';
+                document.getElementById('currentCallText').innerHTML = `${state.currentCall.count}个${state.currentCall.value} <span class="mode-tag ${modeClass}">${modeText}</span>`;
+            } else {
+                document.getElementById('currentCallText').innerText = `未叫点`;
+            }
+
+            const isMyTurn = state.currentTurn === myUserId;
+            document.getElementById('draftCount').disabled = !isMyTurn;
+            document.getElementById('draftValue').disabled = !isMyTurn;
+            document.getElementById('btnChallenge').disabled = !isMyTurn || state.currentCall.count === 0;
+
+            const sysLog = document.getElementById('sysLog');
+            if (isMyTurn) {
+                sysLog.innerText = '👉 你的回合';
+                sysLog.style.color = 'var(--highlight)';
+                const curr = state.currentCall;
+                if (curr.count === 0) {
+                    document.getElementById('draftCount').value = 2;
+                    document.getElementById('draftValue').value = 2;
+                    if(btnAddOne) btnAddOne.disabled = true; // 第一轮不准使用加1
+                } else {
+                    document.getElementById('draftCount').value = curr.count;
+                    document.getElementById('draftValue').value = curr.value;
+                    if(btnAddOne) btnAddOne.disabled = false; // 非第一局开放加1
+                }
+                validateDraft(true); 
+            } else {
+                sysLog.innerText = '⏳ 对手思考中...';
+                sysLog.style.color = 'var(--text-muted)';
+                document.getElementById('btnCallFei').disabled = true;
+                document.getElementById('btnCallZhai').disabled = true;
+                if(btnAddOne) btnAddOne.disabled = true;
+            }
+        }
+    }
+
+    function openHistory() {
+        const histDiv = document.getElementById('historyList');
+        histDiv.innerHTML = '';
+        if (!currentGameState || !currentGameState.history || currentGameState.history.length === 0) {
+            histDiv.innerHTML = '<div style="text-align:center; padding:30px; color:#888;">本局暂无战绩，先开一把吧！</div>';
+            document.getElementById('historyModal').style.display = 'flex';
+            return;
+        }
+
+        const records = currentGameState.history.slice().reverse();
+        records.forEach(record => {
+            const isMyChallenge = record.challengerId === myUserId;
+            const isMyWin = record.winnerId === myUserId;
+            
+            let p1 = record.player1 || { id: '', dice: [] };
+            let p2 = record.player2 || { id: '', dice: [] };
+            let myDiceArr = p1.id === myUserId ? p1.dice : p2.dice;
+            let oppDiceArr = p1.id === myUserId ? p2.dice : p1.dice;
+
+            let leftTags = ''; let rightTags = '';
+            if (isMyChallenge) leftTags += `<span class="hist-tag tag-kai">开</span> `;
+            else rightTags += ` <span class="hist-tag tag-kai">开</span>`;
+            if (isMyWin) leftTags += `<span class="hist-tag tag-win">胜</span>`;
+            else rightTags += `<span class="hist-tag tag-win">胜</span>`;
+
+            const callStr = `${record.call.count}个${record.call.value} ${record.call.mode}`;
+            const html = `
+            <div class="hist-item">
+                <div class="hist-top">
+                    <div class="hist-side">${leftTags}</div>
+                    <div class="hist-call">${callStr}</div>
+                    <div class="hist-side right">${rightTags}</div>
+                </div>
+                <div class="hist-bottom">
+                    <div><span class="hist-role">我</span> <span class="hist-dice">(${myDiceArr.join(' ')})</span></div>
+                    <div class="hist-vs">VS</div>
+                    <div><span class="hist-dice">(${oppDiceArr.join(' ')})</span> <span class="hist-role">对方</span></div>
+                </div>
+            </div>`;
+            histDiv.innerHTML += html;
+        });
+        document.getElementById('historyModal').style.display = 'flex';
+    }
+
+    function closeHistory() { document.getElementById('historyModal').style.display = 'none'; }
+
+    // 优化：修改点数时，6点和1点会自动轮转
+    function adjustDraft(type, delta) {
+        if (currentGameState.currentTurn !== myUserId) return;
+        const input = document.getElementById(type === 'count' ? 'draftCount' : 'draftValue');
+        let val = (parseInt(input.value) || 1) + delta;
+        
+        if (type === 'value') {
+            if (val > 6) val = 1;
+            if (val < 1) val = 6;
+        } else {
+            if (val < 1) val = 1;
+        }
+        
+        input.value = val;
+        validateDraft(true);
+    }
+
+    // 新增：快捷+1功能
+    function addOneCall() {
+        if (!currentGameState || currentGameState.phase !== 'playing' || currentGameState.currentTurn !== myUserId) return;
+        const curr = currentGameState.currentCall;
+        if (curr && curr.count > 0) {
+            ws.send(JSON.stringify({ 
+                type: 'callDice', 
+                userId: myUserId,
+                count: curr.count + 1, 
+                value: curr.value, 
+                isZhai: curr.isZhai 
+            }));
+        }
+    }
+
+    // 核心重写：完美支持所有高阶规则（无错别字版本）
+    function validateDraft(forceFormat = false) {
+        const cStr = document.getElementById('draftCount').value;
+        const vStr = document.getElementById('draftValue').value;
+
+        if (!forceFormat && (cStr === '' || vStr === '')) {
+            document.getElementById('btnCallFei').disabled = true;
+            document.getElementById('btnCallZhai').disabled = true;
+            return;
+        }
+
+        let c = parseInt(cStr) || 1;
+        let v = parseInt(vStr) || 1;
+
+        if (forceFormat) {
+            if (c < 1) c = 1;
+            if (v < 1) v = 1; if (v > 6) v = 6;
+            document.getElementById('draftCount').value = c;
+            document.getElementById('draftValue').value = v;
+        }
+
+        const curr = currentGameState.currentCall;
+        const btnFei = document.getElementById('btnCallFei');
+        const btnZhai = document.getElementById('btnCallZhai');
+
+        // 1点本身就是百搭，不符合飞的逻辑，视觉上置灰
+        if (v === 1) { 
+            btnFei.style.opacity = "0.3"; 
+        } else { 
+            btnFei.style.opacity = "1"; 
+        }
+
+        let isFeiValid = false; 
+        let isZhaiValid = false;
+        const playerCount = currentGameState.players ? currentGameState.players.length : 2;
+
+        if (curr.count === 0) {
+            // 第一轮规则
+            if (c >= playerCount) isFeiValid = (v !== 1); // 飞默认从人数开始
+            
+            // 规则6：斋模式，1点允许叫人数，其他点数必须人数+1
+            const minZhai = (v === 1) ? playerCount : playerCount + 1;
+            if (c >= minZhai) isZhaiValid = true;
+        } else {
+            // 后续轮次规则转换
+            // 斋模式的权重计算 (规则1：1点最大)
+            const getRank = (val) => val === 1 ? 7 : val;
+
+            // 校验【飞】的合法性
+            if (v !== 1) {
+                if (!curr.isZhai) {
+                    // 飞 -> 飞: 数量大，或数量同点数大
+                    if (c > curr.count || (c === curr.count && v > curr.value)) isFeiValid = true;
+                } else {
+                    // 规则3：斋 -> 飞: 数量必须双倍
+                    if (c >= curr.count * 2) isFeiValid = true;
+                }
+            }
+
+            // 校验【斋】的合法性
+            if (!curr.isZhai) {
+                // 规则2：飞 -> 斋: 数量允许减 1
+                if (c >= curr.count - 1) isZhaiValid = true;
+            } else {
+                // 规则1：斋 -> 斋: 按照 1 最大进行比对
+                if (c > curr.count || (c === curr.count && getRank(v) > getRank(curr.value))) isZhaiValid = true;
+            }
+        }
+
+        const isMyTurn = currentGameState.currentTurn === myUserId;
+        btnFei.disabled = !isFeiValid || !isMyTurn;
+        btnZhai.disabled = !isZhaiValid || !isMyTurn;
+    }
+
+    function callDice(isZhaiReq) {
+        ws.send(JSON.stringify({ 
+            type: 'callDice', 
+            userId: myUserId,
+            count: parseInt(document.getElementById('draftCount').value), 
+            value: parseInt(document.getElementById('draftValue').value), 
+            isZhai: Boolean(isZhaiReq) 
+        }));
+    }
+
+    function challenge() { ws.send(JSON.stringify({ type: 'challenge', userId: myUserId })); }
+
+    connect();
+</script>
+
+</body>
+</html>
