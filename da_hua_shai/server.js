@@ -56,6 +56,11 @@ function getZhaiRank(val) {
     return val === 1 ? 7 : val;
 }
 
+// 辅助函数：计算 N 盘几胜 (例如 3盘2胜, 5盘3胜)
+function getWinThreshold(totalGames) {
+    return Math.floor(totalGames / 2) + 1;
+}
+
 wss.on('connection', (ws) => {
     let currentRoomId = null;
 
@@ -63,7 +68,6 @@ wss.on('connection', (ws) => {
         try {
             const data = JSON.parse(message);
 
-            // 解决偶发“对方没更新”问题：响应心跳包，防范 WebSocket 假死断开
             if (data.type === 'ping') {
                 return ws.send(JSON.stringify({ type: 'pong' }));
             }
@@ -71,15 +75,28 @@ wss.on('connection', (ws) => {
             if (data.type === 'createRoom') {
                 const roomId = Math.random().toString(36).substring(2, 6).toUpperCase();
                 currentRoomId = roomId;
+                
+                const settings = data.settings || { mode: 'infinite' };
+
                 rooms.set(roomId, {
                     roomId: roomId,
+                    settings: settings,
+                    scores: {}, 
+                    largeScores: {}, 
+                    isGameOver: false, 
+                    finalWinner: null,
                     history: [], 
-                    players: [{ id: data.userId, ws: ws, dice: [], isReady: false, isOnline: true }],
+                    // 【优化点】：建房时直接给予预热数组 [1, 1, 1, 1, 1]
+                    players: [{ id: data.userId, ws: ws, dice: [1, 1, 1, 1, 1], isReady: false, isOnline: true }],
                     currentTurn: null,
                     lastLoser: null, 
                     currentCall: { count: 0, value: 0, isZhai: false },
                     phase: 'waiting'
                 });
+                
+                rooms.get(roomId).scores[data.userId] = 0;
+                rooms.get(roomId).largeScores[data.userId] = 0;
+
                 ws.send(JSON.stringify({ type: 'roomCreated', roomId: roomId }));
                 broadcast(roomId, '房间创建成功，等待对手...');
             }
@@ -100,7 +117,12 @@ wss.on('connection', (ws) => {
                     broadcast(roomId, '已重连恢复游戏状态！');
                 } else {
                     if (room.players.length >= 2) return ws.send(JSON.stringify({ type: 'error', message: '房间已满' }));
-                    room.players.push({ id: data.userId, ws: ws, dice: [], isReady: false, isOnline: true });
+                    // 【优化点】：进房时直接给予预热数组 [1, 1, 1, 1, 1]
+                    room.players.push({ id: data.userId, ws: ws, dice: [1, 1, 1, 1, 1], isReady: false, isOnline: true });
+                    
+                    if (!(data.userId in room.scores)) room.scores[data.userId] = 0;
+                    if (!(data.userId in room.largeScores)) room.largeScores[data.userId] = 0;
+
                     broadcast(roomId, '玩家已加入，请摇骰子！');
                 }
             }
@@ -109,7 +131,6 @@ wss.on('connection', (ws) => {
                 const room = rooms.get(currentRoomId);
                 if (room) {
                     room.players = room.players.filter(p => p.id !== data.userId);
-
                     if (room.players.length === 0) {
                         if (room.destroyTimer) clearTimeout(room.destroyTimer);
                         rooms.delete(currentRoomId);
@@ -125,7 +146,7 @@ wss.on('connection', (ws) => {
 
             if (data.type === 'rollDice') {
                 const room = rooms.get(currentRoomId);
-                if (!room || room.phase === 'playing') return;
+                if (!room || room.phase === 'playing' || room.isGameOver) return;
 
                 const player = room.players.find(p => p.id === data.userId);
                 if (player) {
@@ -210,6 +231,35 @@ wss.on('connection', (ws) => {
 
                 room.lastLoser = loserId;
 
+                let finalGameOver = false;
+                let matchOverStr = "";
+
+                if (room.settings && room.settings.mode === 'turn' && !room.isGameOver) {
+                    room.scores[winnerId] = (room.scores[winnerId] || 0) + 1;
+                    const smallReq = getWinThreshold(room.settings.smallCount);
+
+                    if (room.scores[winnerId] >= smallReq) {
+                        if (room.settings.turnType === 'large') {
+                            room.largeScores[winnerId] = (room.largeScores[winnerId] || 0) + 1;
+                            room.scores[challengerId] = 0; 
+                            room.scores[callerId] = 0;
+                            matchOverStr = `🎲 小回合结束！进入下一局！`;
+                            
+                            const largeReq = getWinThreshold(room.settings.largeCount);
+                            if (room.largeScores[winnerId] >= largeReq) {
+                                finalGameOver = true;
+                            }
+                        } else {
+                            finalGameOver = true;
+                        }
+                    }
+                }
+
+                if (finalGameOver) {
+                    room.isGameOver = true;
+                    room.finalWinner = winnerId;
+                }
+
                 room.result = {
                     winner: winnerId,
                     loser: loserId,
@@ -220,7 +270,11 @@ wss.on('connection', (ws) => {
                     callValue: call.value,
                     mode: call.isZhai ? '斋' : '飞',
                     challengerDesc: challengerStats.desc,
-                    callerDesc: callerStats.desc
+                    callerDesc: callerStats.desc,
+                    finalGameOver: finalGameOver,
+                    finalWinner: room.finalWinner,
+                    matchOverStr: matchOverStr,
+                    prize: room.settings ? room.settings.prize : []
                 };
 
                 if (!room.history) room.history = []; 
@@ -233,7 +287,7 @@ wss.on('connection', (ws) => {
                 });
 
                 room.players.forEach(p => p.isReady = false);
-                broadcast(currentRoomId, '开牌结算！');
+                broadcast(currentRoomId, finalGameOver ? '🎉 回合制对局彻底结束！' : '开牌结算！');
             }
         } catch (error) {
             console.error("处理消息失败:", error);
